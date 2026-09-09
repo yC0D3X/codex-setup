@@ -43,17 +43,10 @@ if (-not $winget) {
 }
 
 Write-Host "INICIANDO A INSTALAÇÃO AUTOMATIZADA..." -ForegroundColor Red
-Write-Host "Por favor, aguarde e não feche esta janela." -ForegroundColor Yellow
+Write-Host "Por favor, aguarde e não feche esta janela." -ForegroundColor Red
 Write-Host "Alguns instaladores podem pedir permissão de administrador." -ForegroundColor DarkGray
 Start-Sleep -Seconds 3
 
-# =====================================
-# OFFICE 2021 — BAIXA TEMPORARIAMENTE E INSTALA
-# O instalador NÃO fica salvo permanentemente: vai pra uma pasta
-# temporária e é apagado no final do script (bloco de limpeza).
-# =====================================
-# Troque pela URL do asset no seu GitHub Release, ex:
-# https://github.com/SEU-USUARIO/SEU-REPO/releases/download/v1/OFFICE2021.exe
 $officeUrl = "https://raw.githubusercontent.com/yC0D3X/codex-setup/main/OFFICE2021.exe"
 $officeInstallPath = "C:\Program Files\Microsoft Office"
 
@@ -66,9 +59,9 @@ if (Test-Path $officeInstallPath) {
     try {
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        Write-Host "`n----------------------------------------"
-        Write-Host "Baixando instalador do Office 2021..." -ForegroundColor Magenta
-        Write-Host "----------------------------------------`n"
+        Write-Host "`n+----------------------------------------+"
+        Write-Host "|  Baixando instalador do Office 2021..." -ForegroundColor Magenta
+        Write-Host "+----------------------------------------+`n"
         Invoke-WebRequest -Uri $officeUrl -OutFile $officeTempPath -UseBasicParsing
 
         Write-Host "Instalando Office 2021... (aguardando o instalador terminar)" -ForegroundColor Magenta
@@ -87,11 +80,39 @@ if (Test-Path $officeInstallPath) {
 }
 
 # =====================================
+# GOOGLE CHROME — instalado via MSI direto (não usa winget)
+# O pacote Google.Chrome do winget costuma falhar com "Installer hash
+# does not match" porque a URL da Google muda com frequência e o
+# manifesto do winget demora a acompanhar. Baixando e instalando via
+# msiexec direto, esse problema não ocorre.
+# =====================================
+$chromeInstallPath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+if (Test-Path $chromeInstallPath) {
+    Write-Host "`nGoogle Chrome já está instalado. Pulando instalação..." -ForegroundColor Green
+} else {
+    try {
+        $chromeUrl = "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi"
+        $chromeTempPath = Join-Path $env:TEMP "chrome_installer.msi"
+
+        Write-Host "`n+----------------------------------------+"
+        Write-Host "|  Baixando e instalando o Google Chrome..." -ForegroundColor Magenta
+        Write-Host "+----------------------------------------+`n"
+
+        Invoke-WebRequest -Uri $chromeUrl -OutFile $chromeTempPath -UseBasicParsing
+        Start-Process msiexec.exe -ArgumentList "/i `"$chromeTempPath`" /qn /norestart" -Wait
+
+        Remove-Item -Path $chromeTempPath -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "Falha ao baixar/instalar o Chrome: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+# =====================================
 # LISTA DE PROGRAMAS (WINGET IDs)
 # Para remover um programa, coloque um '#' no início da linha.
 # =====================================
 $programas = @(
-    "Google.Chrome",
     "RARLab.WinRAR",
     "Adobe.Acrobat.Reader.64-bit",
     "Oracle.JavaRuntimeEnvironment",
@@ -108,9 +129,9 @@ $programas = @(
 
 # Loop que percorre a lista e instala um por um
 foreach ($id in $programas) {
-    Write-Host "`n----------------------------------------"
-    Write-Host "INSTALANDO: $id" -ForegroundColor Magenta
-    Write-Host "----------------------------------------`n"
+    Write-Host "`n+----------------------------------------+"
+    Write-Host "|  INSTALANDO: $id" -ForegroundColor Magenta
+    Write-Host "+----------------------------------------+`n"
 
     winget install -e --id $id --source winget --accept-source-agreements --accept-package-agreements --silent
 }
@@ -136,7 +157,7 @@ if ($MyInvocation.MyCommand.Path) {
     Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoProfile -Command Start-Sleep -Seconds 2; Remove-Item -Force '$scriptPath'"
 }
 
-# ReadKey só funciona em console interativo; evita erro ao rodar via irm/tarefas agendada
+# ReadKey só funciona em console interativo; evita erro ao rodar via irm/tarefas agendadas
 if ($Host.Name -eq "ConsoleHost") {
     Write-Host "Pressione qualquer tecla para sair..."
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
