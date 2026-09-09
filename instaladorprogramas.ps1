@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # SCRIPT DE PÓS-INSTALAÇÃO AUTOMATIZADA (WINGET)
 # ============================================================
 # Uso local:  .\instaladorprogramas.ps1
@@ -13,7 +13,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) {
     Write-Host "Este script precisa ser executado como Administrador. Reabrindo com elevação..." -ForegroundColor Yellow
     # Troque a URL abaixo pelo link raw do seu script quando for usar via irm
-    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://SEU-LINK/instaladorprogramas.ps1 | iex`""
+    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/yC0D3X/codex-setup/main/bootstrap.ps1 | iex`""
     exit
 }
 
@@ -54,7 +54,7 @@ Start-Sleep -Seconds 3
 # =====================================
 # Troque pela URL do asset no seu GitHub Release, ex:
 # https://github.com/SEU-USUARIO/SEU-REPO/releases/download/v1/OFFICE2021.exe
-$officeUrl = "https://SEU-LINK/OFFICE2021.exe"
+$officeUrl = "https://raw.githubusercontent.com/yC0D3X/codex-setup/main/OFFICE2021.exe"
 $officeInstallPath = "C:\Program Files\Microsoft Office"
 
 $tempDir = Join-Path $env:TEMP "InfoprimeSetup"
