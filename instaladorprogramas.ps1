@@ -136,7 +136,7 @@ if ($MyInvocation.MyCommand.Path) {
     Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoProfile -Command Start-Sleep -Seconds 2; Remove-Item -Force '$scriptPath'"
 }
 
-# ReadKey só funciona em console interativo; evita erro ao rodar via irm/tarefas agendadas
+# ReadKey só funciona em console interativo; evita erro ao rodar via irm/tarefas agendada
 if ($Host.Name -eq "ConsoleHost") {
     Write-Host "Pressione qualquer tecla para sair..."
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
