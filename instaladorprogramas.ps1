@@ -116,38 +116,35 @@ if (Test-Path $officeInstallPath) {
 }
 
 # =====================================
-# GOOGLE CHROME — instalado via MSI direto (não usa winget)
+# GOOGLE CHROME — instalado via MSI direto, em segundo plano
 # O pacote Google.Chrome do winget costuma falhar com "Installer hash
 # does not match" porque a URL da Google muda com frequência e o
 # manifesto do winget demora a acompanhar. Baixando e instalando via
 # msiexec direto, esse problema não ocorre.
 # =====================================
 $chromeInstallPath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+$chromeJob = $null
 
 if (Test-Path $chromeInstallPath) {
     Write-Host "`nGoogle Chrome já está instalado. Pulando instalação..." -ForegroundColor Green
 } else {
-    try {
-        $chromeUrl = "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi"
-        $chromeTempPath = Join-Path $env:TEMP "chrome_installer.msi"
+    Write-Host "`n----------------------------------------"
+    Write-Host "Chrome: iniciado em segundo plano." -ForegroundColor Magenta
+    Write-Host "----------------------------------------`n"
 
-        Write-Host "`n----------------------------------------"
-        Write-Host "Baixando e instalando o Google Chrome..." -ForegroundColor Magenta
-        Write-Host "----------------------------------------`n"
+    $chromeJob = Start-Job -ScriptBlock {
+        param($url, $path)
+        try {
+            Import-Module BitsTransfer -ErrorAction SilentlyContinue
+            Start-BitsTransfer -Source $url -Destination $path -ErrorAction Stop
 
-        # curl.exe (nativo do Windows 10/11) com um User-Agent de navegador.
-        # Muitos CDNs (inclusive o da Google) entregam menos velocidade pra
-        # ferramentas de script/automação — fingir ser um navegador normal
-        # resolve isso na prática.
-        $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        & curl.exe -L --silent --show-error -A $userAgent -o $chromeTempPath $chromeUrl
+            Start-Process msiexec.exe -ArgumentList "/i `"$path`" /qn /norestart" -Wait
 
-        Start-Process msiexec.exe -ArgumentList "/i `"$chromeTempPath`" /qn /norestart" -Wait
-
-        Remove-Item -Path $chromeTempPath -Force -ErrorAction SilentlyContinue
-    } catch {
-        Write-Host "Falha ao baixar/instalar o Chrome: $($_.Exception.Message)" -ForegroundColor Red
-    }
+            Remove-Item -Path $path -Force -ErrorAction SilentlyContinue
+        } catch {
+            "Falha ao baixar/instalar o Chrome: $($_.Exception.Message)"
+        }
+    } -ArgumentList "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi", (Join-Path $env:TEMP "chrome_installer.msi")
 }
 
 # =====================================
@@ -183,15 +180,22 @@ Write-Host "PROGRAMAS FINALIZADOS! Verificando Office..." -ForegroundColor DarkG
 Write-Host "========================================"
 
 # =====================================
-# AGUARDA O OFFICE (se ainda estiver rodando em segundo plano)
-# Na maioria dos casos ele já terminou, já que rodou em paralelo
-# com o Chrome e a lista de programas.
+# AGUARDA OFFICE E CHROME (se ainda estiverem rodando em segundo plano)
+# Na maioria dos casos já terminaram, já que rodaram em paralelo
+# com a lista de programas do winget.
 # =====================================
 if ($officeJob) {
     Wait-Job $officeJob | Out-Null
     $officeOutput = Receive-Job $officeJob
     if ($officeOutput) { Write-Host $officeOutput -ForegroundColor Red }
     Remove-Job $officeJob
+}
+
+if ($chromeJob) {
+    Wait-Job $chromeJob | Out-Null
+    $chromeOutput = Receive-Job $chromeJob
+    if ($chromeOutput) { Write-Host $chromeOutput -ForegroundColor Red }
+    Remove-Job $chromeJob
 }
 
 Write-Host "`n========================================"
