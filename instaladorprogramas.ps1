@@ -20,6 +20,11 @@ if (-not $isAdmin) {
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
+# A barra de progresso do Invoke-WebRequest deixa os downloads MUITO mais
+# lentos (é um bug conhecido do PowerShell). Desativando isso, os downloads
+# ficam praticamente na mesma velocidade de baixar pelo navegador.
+$ProgressPreference = 'SilentlyContinue'
+
 # =====================================
 # VERIFICA SE TEM WINGET
 # =====================================
@@ -43,40 +48,51 @@ if (-not $winget) {
 }
 
 Write-Host "INICIANDO A INSTALAÇÃO AUTOMATIZADA..." -ForegroundColor Red
-Write-Host "Por favor, aguarde e não feche esta janela." -ForegroundColor Red
+Write-Host "Por favor, aguarde e não feche esta janela." -ForegroundColor Yellow
 Write-Host "Alguns instaladores podem pedir permissão de administrador." -ForegroundColor DarkGray
 Start-Sleep -Seconds 3
 
+# =====================================
+# OFFICE 2021 — RODA EM SEGUNDO PLANO (não bloqueia o resto do script)
+# O instalador NÃO fica salvo permanentemente: vai pra uma pasta
+# temporária e é apagado no final do script (bloco de limpeza).
+# =====================================
 $officeUrl = "https://raw.githubusercontent.com/yC0D3X/codex-setup/main/OFFICE2021.exe"
 $officeInstallPath = "C:\Program Files\Microsoft Office"
 
 $tempDir = Join-Path $env:TEMP "InfoprimeSetup"
 $officeTempPath = Join-Path $tempDir "OFFICE2021.exe"
 
+$officeJob = $null
+
 if (Test-Path $officeInstallPath) {
     Write-Host "`nOffice já está instalado. Pulando instalação..." -ForegroundColor Green
 } else {
-    try {
-        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        Write-Host "`n+----------------------------------------+"
-        Write-Host "|  Baixando instalador do Office 2021..." -ForegroundColor Magenta
-        Write-Host "+----------------------------------------+`n"
-        Invoke-WebRequest -Uri $officeUrl -OutFile $officeTempPath -UseBasicParsing
+    Write-Host "`n----------------------------------------"
+    Write-Host "Office 2021: iniciado em segundo plano." -ForegroundColor Magenta
+    Write-Host "----------------------------------------`n"
 
-        Write-Host "Instalando Office 2021... (aguardando o instalador terminar)" -ForegroundColor Magenta
-        Start-Process -FilePath $officeTempPath -Wait
+    $officeJob = Start-Job -ScriptBlock {
+        param($url, $path, $installPath)
+        try {
+            Import-Module BitsTransfer -ErrorAction SilentlyContinue
+            Start-BitsTransfer -Source $url -Destination $path -ErrorAction Stop
 
-        # Alguns instaladores (ex: Click-to-Run) retornam antes de terminar de
-        # verdade e continuam em segundo plano. Se for o seu caso, este loop
-        # espera até a pasta de instalação aparecer (timeout de 15 min).
-        $timeout = (Get-Date).AddMinutes(15)
-        while (-not (Test-Path $officeInstallPath) -and (Get-Date) -lt $timeout) {
-            Start-Sleep -Seconds 10
+            Start-Process -FilePath $path -Wait
+
+            # Alguns instaladores (ex: Click-to-Run) retornam antes de terminar
+            # de verdade e continuam em segundo plano. Este loop espera até a
+            # pasta de instalação aparecer (timeout de 15 min).
+            $timeout = (Get-Date).AddMinutes(15)
+            while (-not (Test-Path $installPath) -and (Get-Date) -lt $timeout) {
+                Start-Sleep -Seconds 10
+            }
+        } catch {
+            "Falha ao baixar/instalar o Office: $($_.Exception.Message)"
         }
-    } catch {
-        Write-Host "Falha ao baixar/instalar o Office: $($_.Exception.Message)" -ForegroundColor Red
-    }
+    } -ArgumentList $officeUrl, $officeTempPath, $officeInstallPath
 }
 
 # =====================================
@@ -95,11 +111,16 @@ if (Test-Path $chromeInstallPath) {
         $chromeUrl = "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi"
         $chromeTempPath = Join-Path $env:TEMP "chrome_installer.msi"
 
-        Write-Host "`n+----------------------------------------+"
-        Write-Host "|  Baixando e instalando o Google Chrome..." -ForegroundColor Magenta
-        Write-Host "+----------------------------------------+`n"
+        Write-Host "`n----------------------------------------"
+        Write-Host "Baixando e instalando o Google Chrome..." -ForegroundColor Magenta
+        Write-Host "----------------------------------------`n"
 
-        Invoke-WebRequest -Uri $chromeUrl -OutFile $chromeTempPath -UseBasicParsing
+        # BITS costuma baixar bem mais rápido que Invoke-WebRequest para
+        # arquivos grandes, e usa a mesma largura de banda de forma mais
+        # eficiente (é o mesmo mecanismo usado pelo Windows Update).
+        Import-Module BitsTransfer -ErrorAction SilentlyContinue
+        Start-BitsTransfer -Source $chromeUrl -Destination $chromeTempPath -ErrorAction Stop
+
         Start-Process msiexec.exe -ArgumentList "/i `"$chromeTempPath`" /qn /norestart" -Wait
 
         Remove-Item -Path $chromeTempPath -Force -ErrorAction SilentlyContinue
@@ -129,11 +150,27 @@ $programas = @(
 
 # Loop que percorre a lista e instala um por um
 foreach ($id in $programas) {
-    Write-Host "`n+----------------------------------------+"
-    Write-Host "|  INSTALANDO: $id" -ForegroundColor Magenta
-    Write-Host "+----------------------------------------+`n"
+    Write-Host "`n----------------------------------------"
+    Write-Host "INSTALANDO: $id" -ForegroundColor Magenta
+    Write-Host "----------------------------------------`n"
 
     winget install -e --id $id --source winget --accept-source-agreements --accept-package-agreements --silent
+}
+
+Write-Host "`n========================================"
+Write-Host "PROGRAMAS FINALIZADOS! Verificando Office..." -ForegroundColor DarkGreen
+Write-Host "========================================"
+
+# =====================================
+# AGUARDA O OFFICE (se ainda estiver rodando em segundo plano)
+# Na maioria dos casos ele já terminou, já que rodou em paralelo
+# com o Chrome e a lista de programas.
+# =====================================
+if ($officeJob) {
+    Wait-Job $officeJob | Out-Null
+    $officeOutput = Receive-Job $officeJob
+    if ($officeOutput) { Write-Host $officeOutput -ForegroundColor Red }
+    Remove-Job $officeJob
 }
 
 Write-Host "`n========================================"
