@@ -33,16 +33,36 @@ Write-Host "`nVerificando Winget..." -ForegroundColor Cyan
 $winget = Get-Command winget -ErrorAction SilentlyContinue
 
 if (-not $winget) {
-    Write-Host "Winget não encontrado. Instalando..." -ForegroundColor Yellow
+    Write-Host "Winget não encontrado. Instalando, isso pode levar alguns minutos..." -ForegroundColor Yellow
 
-    $url = "https://aka.ms/getwinget"
-    $installer = "$env:TEMP\AppInstaller.msixbundle"
+    $wingetJob = Start-Job -ScriptBlock {
+        $ErrorActionPreference = 'Stop'
+        Install-PackageProvider -Name NuGet -Force | Out-Null
+        Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery | Out-Null
+        Repair-WinGetPackageManager -AllUsers
+    }
 
-    Invoke-WebRequest -Uri $url -OutFile $installer
-    Add-AppxPackage -Path $installer
+    $spinner = @('|', '/', '-', '\')
+    $i = 0
+    while ($wingetJob.State -eq 'Running') {
+        Write-Host -NoNewline "`rInstalando Winget $($spinner[$i % $spinner.Length])  "
+        Start-Sleep -Milliseconds 250
+        $i++
+    }
+    Write-Host "`r                                  `r" -NoNewline
 
-    Write-Host "Winget instalado com sucesso!" -ForegroundColor Green
-    Start-Sleep -Seconds 5
+    $wingetFailed = $wingetJob.State -eq 'Failed'
+    Remove-Job $wingetJob -Force
+
+    # Atualiza o PATH da sessão atual pra reconhecer o winget recém-instalado
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+
+    if ($winget) {
+        Write-Host "Winget instalado com sucesso!" -ForegroundColor Green
+    } else {
+        Write-Host "Não foi possível instalar o Winget automaticamente. Pode ser necessário reiniciar o PC." -ForegroundColor Red
+    }
 } else {
     Write-Host "Winget já está instalado." -ForegroundColor Green
 }
@@ -115,11 +135,12 @@ if (Test-Path $chromeInstallPath) {
         Write-Host "Baixando e instalando o Google Chrome..." -ForegroundColor Magenta
         Write-Host "----------------------------------------`n"
 
-        # BITS costuma baixar bem mais rápido que Invoke-WebRequest para
-        # arquivos grandes, e usa a mesma largura de banda de forma mais
-        # eficiente (é o mesmo mecanismo usado pelo Windows Update).
-        Import-Module BitsTransfer -ErrorAction SilentlyContinue
-        Start-BitsTransfer -Source $chromeUrl -Destination $chromeTempPath -ErrorAction Stop
+        # curl.exe (nativo do Windows 10/11) com um User-Agent de navegador.
+        # Muitos CDNs (inclusive o da Google) entregam menos velocidade pra
+        # ferramentas de script/automação — fingir ser um navegador normal
+        # resolve isso na prática.
+        $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        & curl.exe -L --silent --show-error -A $userAgent -o $chromeTempPath $chromeUrl
 
         Start-Process msiexec.exe -ArgumentList "/i `"$chromeTempPath`" /qn /norestart" -Wait
 
